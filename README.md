@@ -1,4 +1,4 @@
-# Pico PIO Encoder (Arduino)
+# Pico PIO Quadrature Encoder (Arduino)
 
 A high-performance, zero-CPU-overhead quadrature encoder library for the Raspberry Pi Pico (RP2040/RP2350) using the hardware PIO (Programmable I/O) subsystem. 
 
