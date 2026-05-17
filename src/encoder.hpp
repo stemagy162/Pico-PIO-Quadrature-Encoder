@@ -145,9 +145,9 @@ class Encoder {
         void update() {
             value.last = value.cur;
             // Force the PIO to push X register to FIFO
-            pio_sm_exec_wait_blocking(this->pio, sm, pio_encode_in(pio_x, 32));
+            pio_sm_exec_wait_blocking(this->pio, this->sm, pio_encode_in(pio_x, 32));
             // Read from FIFO
-            value.cur = pio_sm_get_blocking(this->pio, sm);
+            value.cur = pio_sm_get_blocking(this->pio, this->sm);
             // Calculate delta with overflow handling
             value.diff = (int32_t)(value.cur - value.last);
         }
@@ -160,6 +160,13 @@ class Encoder {
         */
         int getValue() {
             return (int32_t)value.cur;
+        }
+
+        void resetValue() {
+            pio_sm_exec(this->pio, this->sm, pio_encode_set(pio_x, 0));
+            value.cur = 0;
+            value.last = 0;
+            value.diff = 0;
         }
 
     private:

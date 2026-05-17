@@ -44,5 +44,6 @@ void setup() {
 void loop() {
     Serial.println( encoder.getValue() );
     encoder.update();
+    if (encoder.getValue() > 30) encoder.resetValue();
     delay(10);
 }
