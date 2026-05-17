@@ -48,7 +48,7 @@ void loop() {
 ## Reference
 
 ### Encoder PIO
-URL : [jamon / pi-pico-pio-quadrature-encoder](https://github.com/jamon/pi-pico-pio-quadrature-encoder.git)
+Repository : [jamon / pi-pico-pio-quadrature-encoder](https://github.com/jamon/pi-pico-pio-quadrature-encoder.git)
 
 Copyright (c) 2022 Jamon Terrell <github@jamonterrell.com>
 
