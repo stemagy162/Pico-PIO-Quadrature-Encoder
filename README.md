@@ -1,8 +1,11 @@
 # Pico PIO Quadrature Encoder (Arduino)
 
-A high-performance, zero-CPU-overhead quadrature encoder library for the Raspberry Pi Pico (RP2040/RP2350) using the hardware PIO (Programmable I/O) subsystem. 
+A high-performance, zero-CPU-overhead quadrature encoder library for the Raspberry Pi Pico (RP2040) using the hardware PIO (Programmable I/O) subsystem. 
 
 This library wraps complex PIO register operations into a dead-simple Arduino class with built-in safety guards, making it perfect for both rock-solid industrial robotics and educational use.
+
+⚠️ Work In Progress (WIP): This repository is currently under active development.
+The code is incomplete and subject to major changes. Stay tuned! The roadmap is listed in TODO.md. Feel free to take a look and submit suggestions in the Issues! Also, I don't have an RP2350 yet, but I want to support its PIO eventually!
 
 ## Features
 
