@@ -24,10 +24,9 @@
 
 #pragma once
 
-#include <iostream>
-#include <exception>
 #include "hardware/pio.h"
 #include "quadrature.pio.h"
+
 
 /*
 ### Overview:
@@ -44,8 +43,8 @@ struct Pin {
 
 */
 struct Pin {
-uint8_t A = UINT8_MAX;
-uint8_t B = UINT8_MAX;
+    uint8_t A = UINT8_MAX;
+    uint8_t B = UINT8_MAX;
 };
 
 /*
@@ -67,10 +66,33 @@ struct Value {
 ```
 
 */
-struct Value {
-uint32_t last = 0;
-uint32_t cur = 0;
-int32_t diff = 0;
+struct AbsoluteValue {
+    uint32_t last = 0;
+    uint32_t cur = 0;
+    int32_t diff = 0;
+};
+
+struct RelativeValue {
+    int32_t last = 0;
+    int32_t cur = 0;
+    // RelativeValue::diff = AbsoluteValue.diff, diff field is omitted.
+};
+
+struct MicroSecond {
+    unsigned long last = 0;
+    unsigned long cur = 0;
+    double dt;
+};
+
+struct Rotation {
+    int32_t one_rotation_value; // the value when rotated 360 degrees
+    int32_t last_count;
+    int32_t last_value;
+    int32_t cur_count;
+    int32_t cur_value;
+    int32_t diff_count = 0;
+    int32_t diff_value = 0;
+    double speed = 0.0f;
 };
 
 /*
@@ -99,7 +121,7 @@ void loop() {
 */
 class Encoder {
     public:
-
+        
         /*
         ### Overview:
         Initialize the PIO hardware, claim an unused state machine, and load the quadrature program.
@@ -109,71 +131,105 @@ class Encoder {
         - `pinB` (uint8_t): GPIO number for Phase B (Must be adjacent to Pin A).
         - `pio` (PIO): The PIO instance pointer (`pio0` or `pio1`).
         */
-        void setup(uint8_t pinA, uint8_t pinB, PIO pio) {
-            pin.A = pinA;
-            pin.B = pinB;
-            this->pio = pio;
-
-            // 1. Serial initialization guard (pico only)
-            #if defined(ARDUINO_RASPBERRY_PI_PICO)
-                if (!Serial) {
-                    Serial.begin(115200);
-                    delay(100); 
-                    Serial.println("[ERROR] Serial.begin() was not called before Encoder::setup()!");
-                    while (true) delay(1000);
-                }
-            #endif
-
-            // 2. Configuration guard
-            if (pin.A == UINT8_MAX || pin.B == UINT8_MAX) {  
-                Serial.println("[ERROR] Encoder pins are not set correctly. Please check the arguments of setup().");
-                while(true) delay(1000); // freeze micro controller
+        void setup(uint8_t pinA, uint8_t pinB, PIO pio, uint32_t one_rotation_value = INT32_MAX) {
+            if (!ARDUINO_RASPBERRY_PI_PICO) errorMessage("You cannot use PIO in the other board but Raspberry Pi Pico!");
+            if (!Serial) {
+                Serial.begin(115200);
+                errorMessage("Serial.begin() was not called before Encoder::setup()!");
             }
+            if (abs(pinA - pinB) != 1) errorMessage("Pin A and Pin B must be adjacent! e.g. setup(3, 4, pio0)");
 
-            // 3. Claim hardware resources and initialize PIO program
+            this->pin.A = pinA;
+            this->pin.B = pinB;
+            this->pio = pio;
+            this->rotation.one_rotation_value = one_rotation_value;
+
+            time.cur = micros();
+            time.dt = time.cur - time.last;
+
             this->sm = pio_claim_unused_sm(this->pio, true);
             this->offset = pio_add_program(this->pio, &quadratureA_program);
 
+            // Todo: implement determination which quadratureA or quadrature B is initialized
             quadratureA_program_init(this->pio, this->sm, this->offset, pin.A, pin.B);
         }
 
-        /*
-        ### Overview:
-        Fetch the current hardware register value from the PIO FIFO and update the accumulated angle.
-        This must be called periodically in your main loop.
-        */
         void update() {
-            value.last = value.cur;
-            // Force the PIO to push X register to FIFO
+            absolute_value.last = absolute_value.cur;
+            rotation.last_value = rotation.cur_value;
+            rotation.last_count = rotation.cur_count;
+            time.last = time.cur;
+
             pio_sm_exec_wait_blocking(this->pio, this->sm, pio_encode_in(pio_x, 32));
-            // Read from FIFO
-            value.cur = pio_sm_get_blocking(this->pio, this->sm);
-            // Calculate delta with overflow handling
-            value.diff = (int32_t)(value.cur - value.last);
+            absolute_value.cur = pio_sm_get_blocking(this->pio, this->sm);
+            absolute_value.diff = (int32_t)(absolute_value.cur - absolute_value.last);
+
+            relative_value.cur += absolute_value.diff;
+
+            if (rotation.one_rotation_value != INT32_MAX) {
+                rotation.cur_value += absolute_value.diff;
+                rotation.cur_count += rotation.cur_value / rotation.one_rotation_value;
+                rotation.cur_value %= rotation.one_rotation_value;
+            }
+
+            time.cur = micros();
+            time.dt = (time.cur - time.last) / 1000000.0f;
+            if (time.dt > 0.0f) {
+                rotation.speed = ((double)absolute_value.diff / (double)rotation.one_rotation_value) / time.dt;
+            } else {
+                // pass
+            }
         }
 
         /*
         ### Overview:
         Get the accumulated relative position (angle / step count) of the encoder.
+        Under this process, fetching the current hardware register value from the PIO FIFO and update the accumulated angle.
         ### Return
         - `int`: Total relative steps from the starting position.
         */
-        int getValue() {
-            return (int32_t)value.cur;
+        const int32_t getValue() {
+            return relative_value.cur;
         }
 
-        void resetValue() {
-            pio_sm_exec(this->pio, this->sm, pio_encode_set(pio_x, 0));
-            value.cur = 0;
-            value.last = 0;
-            value.diff = 0;
+        const int32_t getValueDisplacement() {
+            return absolute_value.diff;
         }
+
+        const int32_t getRotationCount() {
+            if (rotation.one_rotation_value == INT32_MAX) errorMessage("Set Rotation Value in setup() to run getRotationCount()! e.g. setup(3, 4, pio0, 120)");
+            return rotation.cur_count;
+        }
+
+        const int32_t getValueInRotation() {
+            return rotation.cur_value;
+        }
+
+        const double getRotationSpeed() {
+            return rotation.speed;
+        }
+
+        // void resetValue() {
+        //     pio_sm_exec(this->pio, this->sm, pio_encode_set(pio_x, 0));
+        //     absolute_value.cur = 0;
+        //     absolute_value.last = 0;
+        //     absolute_value.diff = 0;
+        // }
 
     private:
         Pin pin;
         PIO pio;
         uint sm;
         uint offset;
-        Value value;
-        int relative_angle = 0;
+        AbsoluteValue absolute_value;
+        RelativeValue relative_value;
+        Rotation rotation;
+        
+        MicroSecond time;
+
+        void errorMessage(String message) {
+            Serial.println("[ERROR] " + message);
+            while (true) delay((ulong)LONG_MAX); // halt
+        }
+    
 };
